@@ -67,20 +67,20 @@ class ImportRsbsaFarmers extends Command
             }
 
             $data = [
-                'rsbsa_no' => trim($row[0]),
-                'last_name' => trim($row[1]),
-                'first_name' => trim($row[2]),
-                'middle_name' => trim($row[3]) ?: null,
-                'extension_name' => trim($row[4]) ?: null,
-                'barangay' => trim($row[5]),
-                'gender' => trim($row[6]) ?: null,
-                'contact_number' => trim($row[7]) ?: null,
+                'rsbsa_no' => $this->cleanEncoding($row[0]),
+                'last_name' => $this->cleanEncoding($row[1]),
+                'first_name' => $this->cleanEncoding($row[2]),
+                'middle_name' => $this->cleanEncoding($row[3]),
+                'extension_name' => $this->cleanEncoding($row[4]),
+                'barangay' => $this->cleanEncoding($row[5]),
+                'gender' => $this->cleanEncoding($row[6]),
+                'contact_number' => $this->cleanEncoding($row[7]),
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
 
             // Skip records without RSBSA number
-            if ($data['rsbsa_no'] === '') {
+            if (empty($data['rsbsa_no'])) {
                 $this->warn(
                     "Skipping line {$lineNumber}: missing RSBSA number."
                 );
@@ -94,10 +94,11 @@ class ImportRsbsaFarmers extends Command
             // Process every 500 records
             if (count($batch) >= $batchSize) {
 
-                [$i, $u] = $this->processBatch($batch);
+                [$i, $u, $s] = $this->processBatch($batch);
 
                 $inserted += $i;
                 $updated += $u;
+                $skipped += $s;
 
                 $batch = [];
 
@@ -113,10 +114,11 @@ class ImportRsbsaFarmers extends Command
         // Process remaining records
         if (!empty($batch)) {
 
-            [$i, $u] = $this->processBatch($batch);
+            [$i, $u, $s] = $this->processBatch($batch);
 
             $inserted += $i;
             $updated += $u;
+            $skipped += $s;
         }
 
         fclose($handle);
@@ -138,13 +140,66 @@ class ImportRsbsaFarmers extends Command
         return self::SUCCESS;
     }
 
+    /**
+     * Convert CSV text to UTF-8.
+     *
+     * This handles characters such as Ñ/ñ that may come
+     * from an ANSI / Windows-1252 encoded CSV.
+     */
+    private function cleanEncoding(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        return mb_convert_encoding(
+            $value,
+            'UTF-8',
+            'UTF-8, Windows-1252, ISO-8859-1'
+        );
+    }
+
+    /**
+     * Process a batch of RSBSA records.
+     *
+     * Returns:
+     * [inserted, updated, skipped]
+     */
     private function processBatch(array $batch): array
     {
         /*
-         * --update was specified
+         * Remove duplicate RSBSA numbers inside the CSV batch.
          *
-         * Existing RSBSA numbers will be updated.
-         * New RSBSA numbers will be inserted.
+         * The first occurrence is kept.
+         */
+        $uniqueBatch = [];
+        $duplicateCount = 0;
+
+        foreach ($batch as $data) {
+
+            $rsbsaNo = $data['rsbsa_no'];
+
+            if (isset($uniqueBatch[$rsbsaNo])) {
+                $duplicateCount++;
+                continue;
+            }
+
+            $uniqueBatch[$rsbsaNo] = $data;
+        }
+
+        $batch = array_values($uniqueBatch);
+
+        /*
+         * UPDATE MODE
+         *
+         * Existing RSBSA numbers are updated.
+         * New RSBSA numbers are inserted.
          */
         if ($this->option('update')) {
 
@@ -160,7 +215,7 @@ class ImportRsbsaFarmers extends Command
 
                     RsbsaFarmer::updateOrCreate(
                         [
-                            'rsbsa_no' => $data['rsbsa_no']
+                            'rsbsa_no' => $data['rsbsa_no'],
                         ],
                         [
                             'last_name' => $data['last_name'],
@@ -178,24 +233,28 @@ class ImportRsbsaFarmers extends Command
             $updated = $existing->count();
             $inserted = count($batch) - $updated;
 
-            return [$inserted, $updated];
+            return [
+                $inserted,
+                $updated,
+                $duplicateCount,
+            ];
         }
 
         /*
-         * Normal import.
+         * NORMAL IMPORT MODE
          *
          * Existing RSBSA numbers are skipped.
          * New RSBSA numbers are inserted.
          */
 
-        $before = RsbsaFarmer::whereIn(
+        $existingNumbers = RsbsaFarmer::whereIn(
             'rsbsa_no',
             array_column($batch, 'rsbsa_no')
         )
         ->pluck('rsbsa_no')
         ->all();
 
-        $existingNumbers = array_flip($before);
+        $existingNumbers = array_flip($existingNumbers);
 
         $newRecords = array_filter(
             $batch,
@@ -213,9 +272,14 @@ class ImportRsbsaFarmers extends Command
             );
         }
 
+        $inserted = count($newRecords);
+
+        $skippedExisting = count($batch) - $inserted;
+
         return [
-            count($newRecords),
-            count($batch) - count($newRecords)
+            $inserted,
+            0,
+            $skippedExisting + $duplicateCount,
         ];
     }
 }
