@@ -15,6 +15,7 @@ use App\Http\Controllers\DistributionEventController;
 use App\Http\Controllers\DistributionNotificationController;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Response;
+use App\Http\Controllers\RsbsaFarmerController;
 
 Route::post('/register', [RegisterController::class, 'register']);
 Route::post('/login', [LoginController::class, 'login'])
@@ -36,6 +37,11 @@ Route::options('/storage/signatures/{filename}', function () {
 });
 
 
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/rsbsa-farmers/search', [RsbsaFarmerController::class, 'search']);
+    Route::get('/rsbsa-farmers/{id}', [RsbsaFarmerController::class, 'show']);
+});
 
 // Handle CORS Preflight
 Route::options('/storage/signatures/{filename}', function () {
