@@ -35,61 +35,20 @@ class ImportRsbsaFarmers extends Command
             return self::FAILURE;
         }
 
-        // Read header
-        $header = fgetcsv($handle);
-
-        if ($header === false) {
-            fclose($handle);
-            $this->error('CSV file is empty.');
-            return self::FAILURE;
-        }
-
-        // Remove UTF-8 BOM if present
-        $header[0] = preg_replace('/^\xEF\xBB\xBF/', '', $header[0]);
-
-        $expectedHeader = [
-            'rsbsa_no',
-            'last_name',
-            'first_name',
-            'middle_name',
-            'extension_name',
-            'barangay',
-            'gender',
-            'contact_number',
-        ];
-
-        $header = array_map(function ($value) {
-            return trim($value);
-        }, $header);
-
-        if ($header !== $expectedHeader) {
-            fclose($handle);
-
-            $this->error('CSV header does not match the expected format.');
-
-            $this->line('');
-            $this->line('Expected:');
-            $this->line(implode(',', $expectedHeader));
-
-            $this->line('');
-            $this->line('Found:');
-            $this->line(implode(',', $header));
-
-            return self::FAILURE;
-        }
-
-        $this->info('CSV header validated.');
-        $this->info('Starting import...');
+        $this->info('Starting RSBSA import...');
 
         $inserted = 0;
         $updated = 0;
         $skipped = 0;
-        $lineNumber = 1;
+        $lineNumber = 0;
 
         $batch = [];
         $batchSize = 500;
 
+        // CSV has NO HEADER.
+        // Start reading from the first row.
         while (($row = fgetcsv($handle)) !== false) {
+
             $lineNumber++;
 
             // Skip completely empty rows
@@ -97,6 +56,7 @@ class ImportRsbsaFarmers extends Command
                 continue;
             }
 
+            // Each row must contain exactly 8 columns
             if (count($row) !== 8) {
                 $this->warn(
                     "Skipping line {$lineNumber}: expected 8 columns, found " . count($row)
@@ -121,14 +81,19 @@ class ImportRsbsaFarmers extends Command
 
             // Skip records without RSBSA number
             if ($data['rsbsa_no'] === '') {
-                $this->warn("Skipping line {$lineNumber}: missing RSBSA number.");
+                $this->warn(
+                    "Skipping line {$lineNumber}: missing RSBSA number."
+                );
+
                 $skipped++;
                 continue;
             }
 
             $batch[] = $data;
 
+            // Process every 500 records
             if (count($batch) >= $batchSize) {
+
                 [$i, $u] = $this->processBatch($batch);
 
                 $inserted += $i;
@@ -137,13 +102,17 @@ class ImportRsbsaFarmers extends Command
                 $batch = [];
 
                 $this->info(
-                    "Processed line {$lineNumber} | Inserted: {$inserted} | Updated: {$updated} | Skipped: {$skipped}"
+                    "Processed line {$lineNumber} | " .
+                    "Inserted: {$inserted} | " .
+                    "Updated: {$updated} | " .
+                    "Skipped: {$skipped}"
                 );
             }
         }
 
         // Process remaining records
         if (!empty($batch)) {
+
             [$i, $u] = $this->processBatch($batch);
 
             $inserted += $i;
@@ -153,29 +122,46 @@ class ImportRsbsaFarmers extends Command
         fclose($handle);
 
         $this->newLine();
+
         $this->info('=================================');
         $this->info('RSBSA IMPORT COMPLETE');
         $this->info('=================================');
+
         $this->info("Inserted: {$inserted}");
         $this->info("Updated:  {$updated}");
         $this->info("Skipped:  {$skipped}");
-        $this->info("Total processed: " . ($inserted + $updated + $skipped));
+        $this->info(
+            "Total processed: " .
+            ($inserted + $updated + $skipped)
+        );
 
         return self::SUCCESS;
     }
 
     private function processBatch(array $batch): array
     {
+        /*
+         * --update was specified
+         *
+         * Existing RSBSA numbers will be updated.
+         * New RSBSA numbers will be inserted.
+         */
         if ($this->option('update')) {
+
             $existing = RsbsaFarmer::whereIn(
                 'rsbsa_no',
                 array_column($batch, 'rsbsa_no')
-            )->pluck('id', 'rsbsa_no');
+            )
+            ->pluck('id', 'rsbsa_no');
 
             DB::transaction(function () use ($batch) {
+
                 foreach ($batch as $data) {
+
                     RsbsaFarmer::updateOrCreate(
-                        ['rsbsa_no' => $data['rsbsa_no']],
+                        [
+                            'rsbsa_no' => $data['rsbsa_no']
+                        ],
                         [
                             'last_name' => $data['last_name'],
                             'first_name' => $data['first_name'],
@@ -195,21 +181,41 @@ class ImportRsbsaFarmers extends Command
             return [$inserted, $updated];
         }
 
+        /*
+         * Normal import.
+         *
+         * Existing RSBSA numbers are skipped.
+         * New RSBSA numbers are inserted.
+         */
+
         $before = RsbsaFarmer::whereIn(
             'rsbsa_no',
             array_column($batch, 'rsbsa_no')
-        )->pluck('rsbsa_no')->all();
+        )
+        ->pluck('rsbsa_no')
+        ->all();
 
         $existingNumbers = array_flip($before);
 
-        $newRecords = array_filter($batch, function ($data) use ($existingNumbers) {
-            return !isset($existingNumbers[$data['rsbsa_no']]);
-        });
+        $newRecords = array_filter(
+            $batch,
+            function ($data) use ($existingNumbers) {
+                return !isset(
+                    $existingNumbers[$data['rsbsa_no']]
+                );
+            }
+        );
 
         if (!empty($newRecords)) {
-            DB::table('rsbsa_farmers')->insert(array_values($newRecords));
+
+            DB::table('rsbsa_farmers')->insert(
+                array_values($newRecords)
+            );
         }
 
-        return [count($newRecords), count($batch) - count($newRecords)];
+        return [
+            count($newRecords),
+            count($batch) - count($newRecords)
+        ];
     }
 }
