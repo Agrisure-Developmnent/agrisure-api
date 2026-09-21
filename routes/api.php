@@ -114,7 +114,7 @@ Route::middleware(['auth:sanctum', 'role:mao'])->group(function () {
     Route::post('/farmers/{user_id}/reactivate', [FarmerProfileController::class, 'reactivate']);
 
     // Match {id} with your controller parameter $id
-    Route::post('/rsbsa-farmers/{id}/create-account', [FarmerProfileController::class, 'createFromRsbsa'])->whereNumber('id');
+   Route::post('/rsbsa-farmers/{id}/create-account', [FarmerProfileController::class, 'createFromRsbsa'])->whereNumber('id');
     
     Route::put('/farmers/{user_id}/details', [FarmerProfileController::class, 'updateDetails'])->whereNumber('user_id');
 });
