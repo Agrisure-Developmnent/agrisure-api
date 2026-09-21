@@ -413,12 +413,11 @@ public function createFromRsbsa(Request $request, $id)
 
     $data = $request->validate([
         'email'          => 'nullable|email|unique:users,email',
-        'contact_number' => 'nullable|string|max:20',
+        'contact_number' => 'nullable|string|max:20|unique:users,phone_number',
         'address'        => 'nullable|string|max:255',
         'birthdate'      => 'nullable|date',
     ]);
 
-    // Handle column name variations (rsbsa_no vs rsbsa_number)
     $rsbsaNo = $rsbsa->rsbsa_no ?? $rsbsa->rsbsa_number ?? null;
 
     if ($rsbsaNo && FarmerProfile::where('rsbsa_reference', $rsbsaNo)->exists()) {
@@ -427,48 +426,65 @@ public function createFromRsbsa(Request $request, $id)
         ], 422);
     }
 
-    // Lookup Barangay safely
-    $barangay = Barangay::whereRaw('LOWER(name) = ?', [strtolower(trim($rsbsa->barangay ?? ''))])->first();
+    // Lookup Barangay
+    $barangay = null;
+    if (!empty($rsbsa->barangay)) {
+        $barangay = Barangay::whereRaw('LOWER(name) = ?', [strtolower(trim($rsbsa->barangay))])->first();
+    }
 
-    // Contact number resolution
-    $contact = !empty($data['contact_number']) ? trim($data['contact_number']) : (!empty($rsbsa->contact_number) ? trim($rsbsa->contact_number) : null);
-
-    // Email resolution (convert empty strings to null to prevent SQL unique index errors)
+    // Clean Email (convert empty string to null)
     $email = !empty($data['email']) ? trim($data['email']) : (!empty($rsbsa->email) ? trim($rsbsa->email) : null);
 
-    // Birthdate resolution (satisfies non-null database constraint if applicable)
-    $birthdate = $data['birthdate'] ?? $rsbsa->birthdate ?? $rsbsa->date_of_birth ?? '1990-01-01';
+    // Clean Phone / Contact Number
+    $contact = !empty($data['contact_number']) ? trim($data['contact_number']) : (!empty($rsbsa->contact_number) ? trim($rsbsa->contact_number) : null);
 
+    // Check if phone number is already taken by another user
+    if ($contact && User::where('phone_number', $contact)->exists()) {
+        $contact = null; // Discard duplicate/dummy phone numbers to avoid UNIQUE constraint failure
+    }
+
+    $birthdate = $data['birthdate'] ?? $rsbsa->birthdate ?? $rsbsa->date_of_birth ?? '1990-01-01';
     $tempPassword = Str::random(10);
 
-    $user = DB::transaction(function () use ($rsbsa, $rsbsaNo, $email, $contact, $barangay, $birthdate, $data, $tempPassword) {
-        $user = User::create([
-            'first_name'     => $rsbsa->first_name,
-            'middle_name'    => $rsbsa->middle_name ?? null,
-            'last_name'      => $rsbsa->last_name,
-            'email'          => $email,
-            'phone_number'   => $contact,
-            'barangay_id'    => $barangay?->id,
-            'role'           => User::ROLE_FARMER ?? 'farmer',
-            'account_status' => User::STATUS_VERIFIED ?? 'verified',
-            'password'       => Hash::make($tempPassword),
-        ]);
+    try {
+        $user = DB::transaction(function () use ($rsbsa, $rsbsaNo, $email, $contact, $barangay, $birthdate, $data, $tempPassword) {
 
-        $user->farmerProfile()->create([
-            'email_or_phone'  => $contact ?? $email ?? ('farmer_' . $user->id . '_' . time()),
-            'birthdate'       => $birthdate,
-            'address'         => $data['address'] ?? $rsbsa->address ?? 'N/A',
-            'rsbsa_reference' => $rsbsaNo,
-        ]);
+            $user = User::create([
+                'first_name'     => $rsbsa->first_name,
+                'middle_name'    => $rsbsa->middle_name ?? null,
+                'last_name'      => $rsbsa->last_name,
+                'email'          => $email,
+                'phone_number'   => $contact,
+                'barangay_id'    => $barangay?->id,
+                'role'           => User::ROLE_FARMER ?? 'farmer',
+                'account_status' => User::STATUS_VERIFIED ?? 'verified',
+                'password'       => Hash::make($tempPassword),
+            ]);
 
-        return $user;
-    });
+            $emailOrPhone = $contact ?? $email ?? ('rsbsa_' . $user->id . '_' . time());
 
-    return response()->json([
-        'message'            => 'Farmer account created.',
-        'data'               => $user->load('farmerProfile.farms'),
-        'temporary_password' => $tempPassword,
-    ], 201);
+            $user->farmerProfile()->create([
+                'email_or_phone'  => $emailOrPhone,
+                'birthdate'       => $birthdate,
+                'address'         => $data['address'] ?? $rsbsa->address ?? 'N/A',
+                'rsbsa_reference' => $rsbsaNo,
+            ]);
+
+            return $user;
+        });
+
+        return response()->json([
+            'message'            => 'Farmer account created successfully.',
+            'data'               => $user->load('farmerProfile.farms'),
+            'temporary_password' => $tempPassword,
+        ], 201);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Failed to create farmer account.',
+            'error'   => $e->getMessage(),
+        ], 500);
+    }
 }
 public function updateDetails(Request $request, $user_id)
 {
