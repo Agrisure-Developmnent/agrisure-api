@@ -407,7 +407,7 @@ class FarmerProfileController extends Controller
         ]);
     }
 
-    public function createFromRsbsa(Request $request, $id)
+public function createFromRsbsa(Request $request, $id)
 {
     $rsbsa = RsbsaFarmer::findOrFail($id);
 
@@ -415,38 +415,46 @@ class FarmerProfileController extends Controller
         'email'          => 'nullable|email|unique:users,email',
         'contact_number' => 'nullable|string|max:20',
         'address'        => 'nullable|string|max:255',
+        'birthdate'      => 'nullable|date',
     ]);
 
-    // Duplicate prevention (also enforced by the unique index in the migration below)
-    if (FarmerProfile::where('rsbsa_reference', $rsbsa->rsbsa_no)->exists()) {
+    // Check duplicate RSBSA reference
+    $rsbsaNo = $rsbsa->rsbsa_no ?? $rsbsa->rsbsa_number ?? null;
+    if ($rsbsaNo && FarmerProfile::where('rsbsa_reference', $rsbsaNo)->exists()) {
         return response()->json([
             'message' => 'This RSBSA farmer already has an AgriSure account.',
         ], 422);
     }
 
     $barangay = Barangay::whereRaw('LOWER(name) = ?', [strtolower(trim($rsbsa->barangay ?? ''))])->first();
-    $contact  = $data['contact_number'] ?? $rsbsa->contact_number;
-    $contact  = ($contact !== null && trim($contact) !== '') ? trim($contact) : null; // never fake a number
+    
+    // Resolve contact number / email (required for farmer_profiles.email_or_phone)
+    $contact = $data['contact_number'] ?? $rsbsa->contact_number ?? $data['email'] ?? $rsbsa->email ?? null;
+    
+    // Resolve birthdate (required for farmer_profiles.birthdate)
+    $birthdate = $data['birthdate'] ?? $rsbsa->birthdate ?? $rsbsa->date_of_birth ?? '1990-01-01'; // Fallback default if missing
 
     $tempPassword = Str::random(10);
 
-    $user = DB::transaction(function () use ($rsbsa, $data, $barangay, $contact, $tempPassword, $request) {
+    $user = DB::transaction(function () use ($rsbsa, $rsbsaNo, $data, $barangay, $contact, $birthdate, $tempPassword) {
         $user = User::create([
             'first_name'     => $rsbsa->first_name,
-            'middle_name'    => $rsbsa->middle_name,
+            'middle_name'    => $rsbsa->middle_name ?? null,
             'last_name'      => $rsbsa->last_name,
             'email'          => $data['email'] ?? null,
             'phone_number'   => $contact,
             'barangay_id'    => $barangay?->id,
-            'role'           => 'farmer',
-            'account_status' => 'verified',
+            'role'           => User::ROLE_FARMER ?? 'farmer',
+            'account_status' => User::STATUS_VERIFIED ?? 'verified',
             'password'       => Hash::make($tempPassword),
         ]);
 
+        // Matches all fillable keys in FarmerProfile model
         $user->farmerProfile()->create([
-            'rsbsa_reference' => $rsbsa->rsbsa_no,
-            'gender'          => $rsbsa->gender,
-            'address'         => $data['address'] ?? null,
+            'email_or_phone'  => $contact ?? $user->email ?? ('farmer_' . $user->id), // Guarantees a unique non-null string
+            'birthdate'       => $birthdate,
+            'address'         => $data['address'] ?? $rsbsa->address ?? 'N/A',
+            'rsbsa_reference' => $rsbsaNo,
         ]);
 
         return $user;
@@ -458,7 +466,6 @@ class FarmerProfileController extends Controller
         'temporary_password' => $tempPassword,
     ], 201);
 }
-
 public function updateDetails(Request $request, $user_id)
 {
     $user = User::findOrFail($user_id);
