@@ -90,23 +90,33 @@ Route::post('/forgot-password/reset', [LoginController::class, 'resetPassword'])
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/farmer/profile/{user_id}', [FarmerProfileController::class, 'show']);
     Route::put('/farmer/profile/{user_id}', [FarmerProfileController::class, 'update']);
-    Route::post('/farmer/profile/{user_id}/photo',[FarmerProfileController::class, 'uploadProfilePhoto']);
+    Route::post('/farmer/profile/{user_id}/photo', [FarmerProfileController::class, 'uploadProfilePhoto']);
     Route::put('/farmer/profile/{user_id}/update-rejected', [FarmerProfileController::class, 'updateRejectedProfile']);
-
     Route::post('/farmer/profile/{user_id}/resubmit', [FarmerProfileController::class, 'resubmitVerification']);
-
     Route::post('/farmer/profile/{user_id}/change-password', [FarmerProfileController::class, 'changePassword']);
+
+    Route::get('/farmers/{user_id}', [FarmerProfileController::class, 'show'])->whereNumber('user_id');
+    Route::put('/farmers/{user_id}', [FarmerProfileController::class, 'update'])->whereNumber('user_id');
+    Route::delete('/farmers/{user_id}', [FarmerProfileController::class, 'destroy'])->whereNumber('user_id');
 });
 
+// MAO protected routes
 // MAO protected routes
 Route::middleware(['auth:sanctum', 'role:mao'])->group(function () {
     Route::get('/farmers/pending', [FarmerProfileController::class, 'pending']);
     Route::get('/farmers/verified', [FarmerProfileController::class, 'verified']);
+    Route::get('/farmers/inactive', [FarmerProfileController::class, 'inactive']);
     Route::get('/farmers/rejected', [FarmerProfileController::class, 'rejected']);
 
     Route::post('/farmers/{user_id}/verify', [FarmerProfileController::class, 'verify']);
     Route::post('/farmers/{user_id}/reject', [FarmerProfileController::class, 'reject']);
+    Route::post('/farmers/{user_id}/deactivate', [FarmerProfileController::class, 'deactivate']);
+    Route::post('/farmers/{user_id}/reactivate', [FarmerProfileController::class, 'reactivate']);
+
+    // Match {id} with your controller parameter $id
+    Route::post('/rsbsa-farmers/{id}/create-account', [FarmerProfileController::class, 'createFromRsbsa'])->whereNumber('id');
     
+    Route::put('/farmers/{user_id}/details', [FarmerProfileController::class, 'updateDetails'])->whereNumber('user_id');
 });
 
 use App\Http\Controllers\InventoryController;
