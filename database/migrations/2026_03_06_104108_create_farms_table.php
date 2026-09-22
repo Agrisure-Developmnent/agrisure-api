@@ -27,10 +27,22 @@ return new class extends Migration
 
             $table->decimal('farm_area', 8, 2);
 
-            $table->string('farm_image_path');
+            // Nullable: a walk-in farm registered by MAO may not have
+            // a photo captured on-site.
+            $table->string('farm_image_path')->nullable();
 
-            $table->decimal('latitude', 10, 7);
-            $table->decimal('longitude', 10, 7);
+            // Nullable: a walk-in farm registered by MAO has no GPS
+            // capture, since MAO is at the office, not the field.
+            $table->decimal('latitude', 10, 7)->nullable();
+            $table->decimal('longitude', 10, 7)->nullable();
+
+            // Tracks whether latitude/longitude are real GPS coordinates
+            // or still awaiting capture.
+            // 'confirmed' = has real GPS coordinates (self-registered
+            //                farmers, or MAO-pinned on a map)
+            // 'pending'   = created by MAO without coordinates yet,
+            //                needs a follow-up visit or app update
+            $table->string('geotag_status')->default('confirmed');
 
             $table->string('insurance_status')
                 ->default('not_insured');

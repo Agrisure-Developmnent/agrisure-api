@@ -414,109 +414,109 @@ class InsuranceApplicationController extends Controller
      * Submit planting photo.
      */
     public function capturePlanting(Request $request, $id)
-    {
-        $application = InsuranceApplication::with('farm')
-            ->findOrFail($id);
+{
+    $application = InsuranceApplication::with('farm')
+        ->findOrFail($id);
 
-        $validator = Validator::make($request->all(), [
-            'planting_photo' => 'required|image|mimes:png,jpg,jpeg|max:5120',
-            'latitude' => 'required|numeric|between:-90,90',
-            'longitude' => 'required|numeric|between:-180,180',
-            'accuracy_meters' => 'nullable|numeric|min:0',
-            'captured_at' => 'nullable|date',
+    $validator = Validator::make($request->all(), [
+        'planting_photo' => 'required|image|mimes:png,jpg,jpeg|max:5120',
+        'latitude' => 'required|numeric|between:-90,90',
+        'longitude' => 'required|numeric|between:-180,180',
+        'accuracy_meters' => 'nullable|numeric|min:0',
+        'captured_at' => 'nullable|date',
+    ]);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'message' => 'Validation error',
+            'errors' => $validator->errors(),
+        ], 422);
+    }
+
+    if (in_array($application->status, [
+        'rejected',
+        'insured',
+    ])) {
+        return response()->json([
+            'message' =>
+                'Planting photo cannot be submitted for an application in "'
+                . $application->status
+                . '" status.',
+        ], 422);
+    }
+
+    $photoPath = $request
+        ->file('planting_photo')
+        ->store('planting_photos', 'public');
+
+    $distanceMeters = null;
+    $isWithinGeofence = null;
+    $geotagBackfilled = false;
+
+    $farm = $application->farm;
+
+    if (
+        $farm &&
+        isset($farm->latitude) &&
+        isset($farm->longitude)
+    ) {
+        $distanceMeters = $this->haversineDistanceMeters(
+            (float) $farm->latitude,
+            (float) $farm->longitude,
+            (float) $request->latitude,
+            (float) $request->longitude
+        );
+
+        $isWithinGeofence =
+            $distanceMeters <= self::GEOFENCE_RADIUS_METERS;
+    } elseif ($farm && $farm->geotag_status === 'pending') {
+        /*
+         * The farm has no confirmed location yet (registered by MAO
+         * for a walk-in farmer, with GPS unavailable at the time).
+         * The planting photo's coordinates are the farmer's own phone
+         * GPS taken at the farm, so use them to backfill the farm's
+         * location rather than leaving it unset indefinitely.
+         */
+        $farm->update([
+            'latitude' => $request->latitude,
+            'longitude' => $request->longitude,
+            'geotag_status' => 'confirmed',
         ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation error',
-                'errors' => $validator->errors(),
-            ], 422);
-        }
+        $geotagBackfilled = true;
+        // No distance to compute against — this capture *is* the farm's
+        // first known location, so there's nothing to measure it against.
+    }
 
-        if (in_array($application->status, [
-            'rejected',
-            'insured',
-        ])) {
-            return response()->json([
-                'message' =>
-                    'Planting photo cannot be submitted for an application in "'
-                    . $application->status
-                    . '" status.',
-            ], 422);
-        }
+    $application->update([
+        'planting_photo_path' => $photoPath,
+        'planting_photo_latitude' => $request->latitude,
+        'planting_photo_longitude' => $request->longitude,
+        'planting_photo_accuracy_meters' => $request->accuracy_meters,
+        'planting_photo_captured_at' =>
+            $request->captured_at ?? now(),
+        'is_within_geofence' => $isWithinGeofence,
+        'distance_from_farm_meters' => $distanceMeters,
+        'capture_status' => 'pending',
+        'capture_remarks' => null,
+    ]);
 
-        $photoPath = $request
-            ->file('planting_photo')
-            ->store('planting_photos', 'public');
-
-        $distanceMeters = null;
-        $isWithinGeofence = null;
-
-        $farm = $application->farm;
-
-        if (
-            $farm &&
-            isset($farm->latitude) &&
-            isset($farm->longitude)
-        ) {
-            $distanceMeters = $this->haversineDistanceMeters(
-                (float) $farm->latitude,
-                (float) $farm->longitude,
-                (float) $request->latitude,
-                (float) $request->longitude
-            );
-
-            $isWithinGeofence =
-                $distanceMeters <= self::GEOFENCE_RADIUS_METERS;
-        }
-
-        $application->update([
-            'planting_photo_path' => $photoPath,
-            'planting_photo_latitude' => $request->latitude,
-            'planting_photo_longitude' => $request->longitude,
-            'planting_photo_accuracy_meters' => $request->accuracy_meters,
-            'planting_photo_captured_at' =>
-                $request->captured_at ?? now(),
-            'is_within_geofence' => $isWithinGeofence,
+    return response()->json([
+        'message' => 'Planting photo submitted. Pending MAO verification.',
+        'application' => $application,
+        'geofence' => [
             'distance_from_farm_meters' => $distanceMeters,
-            'capture_status' => 'pending',
-            'capture_remarks' => null,
-        ]);
-
-        return response()->json([
-            'message' => 'Planting photo submitted. Pending MAO verification.',
-            'application' => $application,
-            'geofence' => [
-                'distance_from_farm_meters' => $distanceMeters,
-                'is_within_geofence' => $isWithinGeofence,
-                'radius_meters' => self::GEOFENCE_RADIUS_METERS,
-            ],
-        ]);
-    }
-
-    /**
-     * Verify planting photo.
-     */
-    public function verifyPlantingCapture($id)
-    {
-        $application = InsuranceApplication::findOrFail($id);
-
-        if (!$application->planting_photo_path) {
-            return response()->json([
-                'message' =>
-                    'No planting photo has been submitted for this application yet.',
-            ], 422);
-        }
-
-        $application->update([
-            'capture_status' => 'verified',
-        ]);
-
-        return response()->json([
-            'message' => 'Planting photo verified.',
-            'application' => $application,
-        ]);
-    }
+            'is_within_geofence' => $isWithinGeofence,
+            'radius_meters' => self::GEOFENCE_RADIUS_METERS,
+            'geotag_backfilled' => $geotagBackfilled,
+            'note' => $geotagBackfilled
+                ? 'Farm had no recorded location; this photo\'s GPS was used to set it. No geofence distance to report for this first capture.'
+                : ($isWithinGeofence === null
+                    ? 'Farm location is not confirmed; geofence could not be checked.'
+                    : null),
+        ],
+    ]);
+}
 
     /**
      * Reject planting photo.

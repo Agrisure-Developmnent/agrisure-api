@@ -98,6 +98,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/farmers/{user_id}', [FarmerProfileController::class, 'show'])->whereNumber('user_id');
     Route::put('/farmers/{user_id}', [FarmerProfileController::class, 'update'])->whereNumber('user_id');
     Route::delete('/farmers/{user_id}', [FarmerProfileController::class, 'destroy'])->whereNumber('user_id');
+
+    Route::get('farmers/search', [FarmerProfileController::class, 'search']);
+    Route::get('farmers/{user_id}', [FarmerProfileController::class, 'show']);
 });
 
 // MAO protected routes
@@ -116,6 +119,11 @@ Route::middleware(['auth:sanctum', 'role:mao'])->group(function () {
     // Match {id} with your controller parameter $id
    Route::post('/rsbsa-farmers/{id}/create-account', [FarmerProfileController::class, 'createFromRsbsa'])->whereNumber('id');
     Route::put('/farmers/{user_id}/details', [FarmerProfileController::class, 'updateDetails'])->whereNumber('user_id');
+
+
+    Route::post('/farms/mao-register', [FarmController::class, 'storeByMao']);
+    Route::put('/farms/{id}/location', [FarmController::class, 'updateLocation'])->whereNumber('id');
+    Route::get('/farms/pending-geotag', [FarmController::class, 'pendingGeotag']);
 });
 
 use App\Http\Controllers\InventoryController;

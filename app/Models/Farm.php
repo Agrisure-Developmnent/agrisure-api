@@ -7,21 +7,21 @@ use Illuminate\Database\Eloquent\Model;
 class Farm extends Model
 {
     protected $fillable = [
-        'farmer_profile_id',
-        'farm_name',
-        'crop_type',
-        'farm_area',
-        'farm_image_path',
-        'latitude',
-        'longitude',
-        'insurance_status',
+    'farmer_profile_id',
+    'farm_name',
+    'crop_type',
+    'farm_area',
+    'farm_image_path',
+    'latitude',
+    'longitude',
+    'geotag_status',
+    'insurance_status',
 
-        // Offline support
-        'client_uuid',
-        'sync_source',
-        'captured_at',
-    ];
-
+    // Offline support
+    'client_uuid',
+    'sync_source',
+    'captured_at',
+];
     protected $casts = [
         'farm_area' => 'decimal:2',
         'latitude' => 'decimal:7',
