@@ -16,18 +16,21 @@ use App\Http\Controllers\DistributionNotificationController;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Response;
 use App\Http\Controllers\RsbsaFarmerController;
+use App\Http\Controllers\InventoryController;
+use App\Http\Controllers\DistributionListController;
+use App\Http\Controllers\BarangayFarmerController;
+use App\Http\Controllers\ReportController;
 
 Route::post('/register', [RegisterController::class, 'register']);
 Route::post('/login', [LoginController::class, 'login'])
-    ->middleware('throttle:5,1');
+    ->middleware('throttle:5,1')
+    ->name('login');
 
 Route::post('/verify-login-otp', [LoginController::class, 'verifyOtp'])
-->middleware('throttle:5,1');;
+    ->middleware('throttle:5,1');
     
 Route::post('/otp/resend', [LoginController::class, 'resendOtp'])
     ->middleware('throttle:3,1');
-
-
 
 Route::options('/storage/signatures/{filename}', function () {
     return response('', 200)
@@ -35,8 +38,6 @@ Route::options('/storage/signatures/{filename}', function () {
         ->header('Access-Control-Allow-Methods', 'GET, OPTIONS')
         ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 });
-
-
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/rsbsa-farmers/search', [RsbsaFarmerController::class, 'search']);
@@ -59,7 +60,6 @@ Route::get('/storage/file', function (Illuminate\Http\Request $request) {
         return response()->json(['error' => 'Missing path parameter'], 422);
     }
 
-    // Sanitize each path segment individually so ../ traversal can't escape the disk root
     $segments = explode('/', $path);
     $safePath = implode('/', array_map('basename', $segments));
 
@@ -81,13 +81,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
     Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
 });
+
 Route::post('/forgot-password', [LoginController::class, 'forgotPassword']);
-
 Route::post('/forgot-password/verify-otp', [LoginController::class, 'verifyForgotPasswordOtp']);
-
 Route::post('/forgot-password/reset', [LoginController::class, 'resetPassword']);
+
 // Farmer protected routes
 Route::middleware(['auth:sanctum'])->group(function () {
+    // STATIC ROUTES FIRST
+    Route::get('/farmers/search', [FarmerProfileController::class, 'search']);
+
     Route::get('/farmer/profile/{user_id}', [FarmerProfileController::class, 'show']);
     Route::put('/farmer/profile/{user_id}', [FarmerProfileController::class, 'update']);
     Route::post('/farmer/profile/{user_id}/photo', [FarmerProfileController::class, 'uploadProfilePhoto']);
@@ -95,15 +98,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/farmer/profile/{user_id}/resubmit', [FarmerProfileController::class, 'resubmitVerification']);
     Route::post('/farmer/profile/{user_id}/change-password', [FarmerProfileController::class, 'changePassword']);
 
+    // PARAMETERIZED ROUTES SECOND
     Route::get('/farmers/{user_id}', [FarmerProfileController::class, 'show'])->whereNumber('user_id');
     Route::put('/farmers/{user_id}', [FarmerProfileController::class, 'update'])->whereNumber('user_id');
     Route::delete('/farmers/{user_id}', [FarmerProfileController::class, 'destroy'])->whereNumber('user_id');
-
-    Route::get('/farmers/search', [FarmerProfileController::class, 'search']);
-    Route::get('/farmers/{user_id}', [FarmerProfileController::class, 'show']);
 });
 
-// MAO protected routes
 // MAO protected routes
 Route::middleware(['auth:sanctum', 'role:mao'])->group(function () {
     Route::get('/farmers/pending', [FarmerProfileController::class, 'pending']);
@@ -116,21 +116,15 @@ Route::middleware(['auth:sanctum', 'role:mao'])->group(function () {
     Route::post('/farmers/{user_id}/deactivate', [FarmerProfileController::class, 'deactivate']);
     Route::post('/farmers/{user_id}/reactivate', [FarmerProfileController::class, 'reactivate']);
 
-    // Match {id} with your controller parameter $id
-   Route::post('/rsbsa-farmers/{id}/create-account', [FarmerProfileController::class, 'createFromRsbsa'])->whereNumber('id');
+    Route::post('/rsbsa-farmers/{id}/create-account', [FarmerProfileController::class, 'createFromRsbsa'])->whereNumber('id');
     Route::put('/farmers/{user_id}/details', [FarmerProfileController::class, 'updateDetails'])->whereNumber('user_id');
-
 
     Route::post('/farms/mao-register', [FarmController::class, 'storeByMao']);
     Route::put('/farms/{id}/location', [FarmController::class, 'updateLocation'])->whereNumber('id');
     Route::get('/farms/pending-geotag', [FarmController::class, 'pendingGeotag']);
 });
 
-use App\Http\Controllers\InventoryController;
-use App\Http\Controllers\DistributionListController;
-
 Route::middleware(['auth:sanctum', 'role:mao'])->group(function () {
-
     // Inventory
     Route::get('/inventory', [InventoryController::class, 'index']);
     Route::post('/inventory', [InventoryController::class, 'store']);
@@ -141,150 +135,54 @@ Route::middleware(['auth:sanctum', 'role:mao'])->group(function () {
     Route::get('/distribution-lists', [DistributionListController::class, 'index']);
     Route::post('/distribution-lists', [DistributionListController::class, 'store']);
 
-    // Publish distribution so barangay can view it
-    Route::patch(
-        '/distribution-lists/{id}/publish',
-        [DistributionListController::class, 'publish']
-    );
-
-    // Mark specific farmer as received
-    Route::patch(
-        '/distribution-lists/{listId}/farmers/{farmerId}/received',
-        [DistributionListController::class, 'markFarmerReceived']
-    );
-
-    // Complete whole distribution
-    Route::patch(
-        '/distribution-lists/{id}/complete',
-        [DistributionListController::class, 'complete']
-    );
-
-
-    
+    Route::patch('/distribution-lists/{id}/publish', [DistributionListController::class, 'publish']);
+    Route::patch('/distribution-lists/{listId}/farmers/{farmerId}/received', [DistributionListController::class, 'markFarmerReceived']);
+    Route::patch('/distribution-lists/{id}/complete', [DistributionListController::class, 'complete']);
 
     Route::get('/distribution-events', [DistributionEventController::class, 'index']);
     Route::post('/distribution-events', [DistributionEventController::class, 'store']);
-
     Route::patch('/distribution-events/{id}/publish', [DistributionEventController::class, 'publish']);
     Route::patch('/distribution-events/{id}/complete', [DistributionEventController::class, 'complete']);
-
-    Route::delete('/distribution-events/{id}', [
-    DistributionEventController::class,
-    'destroy'
-]);
+    Route::delete('/distribution-events/{id}', [DistributionEventController::class, 'destroy']);
 });
-
-
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/farms', [FarmController::class, 'all']);
-
     Route::get('/farms/{user_id}', [FarmController::class, 'index']);
-
     Route::post('/farms', [FarmController::class, 'store']);
-
     Route::get('/farm/{id}', [FarmController::class, 'show']);
-
     Route::put('/farm/{id}', [FarmController::class, 'update']);
-
     Route::delete('/farm/{id}', [FarmController::class, 'destroy']);
-    Route::get('/farmer/profile/{user_id}', [FarmerProfileController::class, 'show']);
-
-
 });
 
-
-
 Route::middleware('auth:sanctum')->group(function () {
-
-    Route::post(
-        '/insurance-applications',
-        [InsuranceApplicationController::class, 'store']
-    );
-
-    Route::get(
-        '/insurance-applications',
-        [InsuranceApplicationController::class, 'index']
-    );
-
-    Route::get(
-        '/insurance-applications/{id}',
-        [InsuranceApplicationController::class, 'show']
-    );
-    Route::put(
-        '/insurance-applications/{id}/approve-for-pcic',
-        [InsuranceApplicationController::class, 'approveForPcic']
-    );
-
-    Route::put(
-        '/insurance-applications/{id}/needs-revision',
-        [InsuranceApplicationController::class, 'needsRevision']
-    );
-
-    Route::put(
-        '/insurance-applications/{id}/submit-pcic',
-        [InsuranceApplicationController::class, 'submitToPcic']
-    );
-
-    Route::put(
-        '/insurance-applications/{id}/approve',
-        [InsuranceApplicationController::class, 'approve']
-    );
-
-    Route::put(
-        '/insurance-applications/{id}/reject',
-        [InsuranceApplicationController::class, 'reject']
-    );
+    Route::post('/insurance-applications', [InsuranceApplicationController::class, 'store']);
+    Route::get('/insurance-applications', [InsuranceApplicationController::class, 'index']);
+    Route::get('/insurance-applications/{id}', [InsuranceApplicationController::class, 'show']);
+    Route::put('/insurance-applications/{id}/approve-for-pcic', [InsuranceApplicationController::class, 'approveForPcic']);
+    Route::put('/insurance-applications/{id}/needs-revision', [InsuranceApplicationController::class, 'needsRevision']);
+    Route::put('/insurance-applications/{id}/submit-pcic', [InsuranceApplicationController::class, 'submitToPcic']);
+    Route::put('/insurance-applications/{id}/approve', [InsuranceApplicationController::class, 'approve']);
+    Route::put('/insurance-applications/{id}/reject', [InsuranceApplicationController::class, 'reject']);
     Route::post('/insurance-applications/{id}/verify-payment', [InsuranceApplicationController::class, 'verifyPayment']);
-
     Route::post('/insurance-applications/{id}/reject-payment', [InsuranceApplicationController::class, 'rejectPayment']);
 
-    Route::get(
-    '/insurance/free-coverage/{user_id}',
-    [InsuranceApplicationController::class, 'freeCoverage']);
-
+    Route::get('/insurance/free-coverage/{user_id}', [InsuranceApplicationController::class, 'freeCoverage']);
     Route::get('/insurance-seasons', [InsuranceSeasonController::class, 'index']);
     Route::get('/insurance-seasons/current', [InsuranceSeasonController::class, 'current']);
-
-    Route::put(
-        '/insurance-seasons/current',
-        [InsuranceSeasonController::class, 'updateCurrent']
-    );
-
-    Route::post(
-        '/insurance-seasons/current/close',
-        [InsuranceSeasonController::class, 'closeCurrent']
-    );
-
-     Route::get(
-        '/insurance-applications-history',
-        [InsuranceApplicationController::class, 'history']
-    );
-
-    Route::get(
-        '/insurance-seasons/{id}',
-        [InsuranceSeasonController::class, 'show']
-    );
-
-    Route::get(
-    '/insurance-applications/farm/{farm_id}',
-    [InsuranceApplicationController::class, 'farmHistory']);
-
+    Route::put('/insurance-seasons/current', [InsuranceSeasonController::class, 'updateCurrent']);
+    Route::post('/insurance-seasons/current/close', [InsuranceSeasonController::class, 'closeCurrent']);
+    Route::get('/insurance-applications-history', [InsuranceApplicationController::class, 'history']);
+    Route::get('/insurance-seasons/{id}', [InsuranceSeasonController::class, 'show']);
+    Route::get('/insurance-applications/farm/{farm_id}', [InsuranceApplicationController::class, 'farmHistory']);
     Route::post('/insurance-seasons/new', [InsuranceSeasonController::class, 'createNewSeason']);
 
-   Route::post('/insurance-applications/{id}/capture-planting', [InsuranceApplicationController::class, 'capturePlanting']);
+    Route::post('/insurance-applications/{id}/capture-planting', [InsuranceApplicationController::class, 'capturePlanting']);
     Route::post('/insurance-applications/{id}/verify-capture', [InsuranceApplicationController::class, 'verifyPlantingCapture']);
     Route::post('/insurance-applications/{id}/reject-capture', [InsuranceApplicationController::class, 'rejectPlantingCapture']);
 
-    
-
     Route::get('/barangay-accounts', [BarangayController::class, 'index']);
-
-    Route::get(
-    '/barangays/{barangay}/farmers',
-    [BarangayController::class, 'farmers']);
-
-    
+    Route::get('/barangays/{barangay}/farmers', [BarangayController::class, 'farmers']);
 });
 
 Route::get('/barangays/list', [BarangayController::class, 'list']);
@@ -297,62 +195,32 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/damage-reports/{id}/status', [DamageReportController::class, 'updateStatus']);
 });
 
-use App\Http\Controllers\BarangayFarmerController;
-
 Route::middleware(['auth:sanctum', 'role:barangay'])->group(function () {
-
-    Route::get(
-        '/barangay/farmers',
-        [BarangayFarmerController::class, 'index']
-    );
-
-    Route::get(
-        '/barangay/farmers/{id}',
-        [BarangayFarmerController::class, 'show']
-    );
-
-});
-
-Route::middleware(['auth:sanctum', 'role:barangay'])->group(function () {
-    Route::get('/barangay/distribution-lists', [
-        DistributionListController::class,
-        'barangayIndex'
-    ]);
-
-    Route::get('/barangay/distribution-lists/{id}', [
-        DistributionListController::class,
-        'barangayShow'
-    ]);
+    Route::get('/barangay/farmers', [BarangayFarmerController::class, 'index']);
+    Route::get('/barangay/farmers/{id}', [BarangayFarmerController::class, 'show']);
+    Route::get('/barangay/distribution-lists', [DistributionListController::class, 'barangayIndex']);
+    Route::get('/barangay/distribution-lists/{id}', [DistributionListController::class, 'barangayShow']);
 });
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/claims', [ClaimController::class, 'index']);
     Route::get('/claims/{id}', [ClaimController::class, 'show']);
     Route::put('/claims/{id}', [ClaimController::class, 'update']);
-
     Route::patch('/claims/{id}/downloadCas02Pdf', [ClaimController::class, 'downloadCas02Pdf']);
     Route::patch('/claims/{id}/pcic-result', [ClaimController::class, 'updatePcicResult']);
     Route::patch('/claims/{id}/release', [ClaimController::class, 'setRelease']);
     Route::patch('/claims/{id}/claimed', [ClaimController::class, 'markClaimed']);
-
     Route::get('/farmers/{user_id}/claims', [ClaimController::class, 'myClaims']);
     Route::put('/claims/{id}/file-indemnity', [ClaimController::class, 'fileIndemnityClaim']);
-
     Route::post('/claims/bulk-schedule', [ClaimController::class, 'bulkSetSchedule']);
- 
-
 });
 
-use App\Http\Controllers\ReportController;
-
 Route::middleware('auth:sanctum')->prefix('reports')->group(function () {
-    // Routes allowed for both MAO and Barangay
     Route::middleware('role:mao,barangay')->group(function () {
         Route::get('/farmers', [ReportController::class, 'farmers']);
         Route::get('/farms', [ReportController::class, 'farms']);
     });
 
-    // MAO-only routes
     Route::middleware('role:mao')->group(function () {
         Route::get('/overview', [ReportController::class, 'overview']);
         Route::get('/insurance', [ReportController::class, 'insurance']);
@@ -363,7 +231,6 @@ Route::middleware('auth:sanctum')->prefix('reports')->group(function () {
         Route::get('/executive', [ReportController::class, 'executive']);
     });
 
-    // Barangay-only routes
     Route::middleware('role:barangay')->group(function () {
         Route::get('/supplies-distributed', [ReportController::class, 'barangaySuppliesDistributed']);
     });
