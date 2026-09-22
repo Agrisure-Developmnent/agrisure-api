@@ -10,11 +10,30 @@ use Illuminate\Support\Facades\Storage;
 class FarmController extends Controller
 {
    
-    public function all()
-    {
-        $farms = Farm::with('farmerProfile.user')->get();
-        return response()->json($farms);
+   
+
+public function all(Request $request)
+{
+    $query = Farm::with('farmerProfile.user');
+
+    // 1. Check if farmer_id was passed in query params (e.g., ?farmer_id=5)
+    if ($request->has('farmer_id')) {
+        $farmerId = $request->query('farmer_id');
+
+        $query->where(function ($q) use ($farmerId) {
+            // Checks if farmer_id directly matches Farm's farmer_profile_id column
+            $q->where('farmer_profile_id', $farmerId)
+              // OR checks if it matches via the FarmerProfile's user_id
+              ->orWhereHas('farmerProfile', function ($p) use ($farmerId) {
+                  $p->where('user_id', $farmerId);
+              });
+        });
     }
+
+    $farms = $query->get();
+
+    return response()->json($farms);
+}
     public function index($user_id)
     {
         $profile = FarmerProfile::where('user_id', $user_id)->first();
