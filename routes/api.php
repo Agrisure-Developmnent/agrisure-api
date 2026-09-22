@@ -99,8 +99,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::put('/farmers/{user_id}', [FarmerProfileController::class, 'update'])->whereNumber('user_id');
     Route::delete('/farmers/{user_id}', [FarmerProfileController::class, 'destroy'])->whereNumber('user_id');
 
-    Route::get('farmers/search', [FarmerProfileController::class, 'search']);
-    Route::get('farmers/{user_id}', [FarmerProfileController::class, 'show']);
+    Route::get('/farmers/search', [FarmerProfileController::class, 'search']);
+    Route::get('/farmers/{user_id}', [FarmerProfileController::class, 'show']);
 });
 
 // MAO protected routes
