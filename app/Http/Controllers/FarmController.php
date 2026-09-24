@@ -178,12 +178,7 @@ public function all(Request $request)
         ]);
     }
 
-    /**
- * Register a farm for a walk-in farmer, created by MAO at the office.
- * GPS coordinates and a farm photo are not available on-site, so both
- * are optional here — unlike store(), which is used by farmers
- * self-registering via the app with live GPS capture.
- */
+
 public function storeByMao(Request $request)
 {
     $request->validate([
