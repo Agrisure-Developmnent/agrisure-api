@@ -148,7 +148,8 @@
             display: block;
             width: 85%;
             margin: 0 auto;
-            height: 12px;
+            min-height: 12px;
+            text-align: center;
         }
 
         /* Section IV Cost Table */
@@ -179,10 +180,20 @@
             text-align: center;
             width: 280px;
         }
+        .signature-space {
+            height: 32px;
+            text-align: center;
+        }
+        .signature-space img {
+            max-height: 30px;
+            max-width: 200px;
+        }
         .signature-line {
             border-bottom: 1px solid #000;
             width: 100%;
             margin-bottom: 3px;
+            font-weight: bold;
+            text-align: center;
         }
         .signature-caption {
             font-size: 9.5px;
@@ -236,11 +247,44 @@
 <body>
 
     @php
-        $app = $claim->damageReport->insuranceApplication ?? null;
-        $farmerProfile = $app->farm->farmerProfile ?? null;
+        $report = $claim->damageReport ?? null;
+        $app = $report->insuranceApplication ?? null;
+        $farm = $app->farm ?? null;
+        $farmerProfile = $farm->farmerProfile ?? null;
         $user = $farmerProfile->user ?? null;
-        $farmerName = $user ? trim("{$user->first_name} {$user->middle_name} {$user->last_name} {$user->extension_name}") : null;
-        $cropType = strtolower($app->crop->name ?? '');
+
+        $farmerName = $user
+            ? trim(implode(' ', array_filter([
+                $user->first_name,
+                $user->middle_name,
+                $user->last_name,
+                $user->extension_name,
+            ])))
+            : null;
+
+        $cropType = strtolower($farm->crop_type ?? '');
+
+        // Date formatter: accepts Carbon objects or ISO strings
+        $fmtDate = function ($value) {
+            if (empty($value)) {
+                return '';
+            }
+            try {
+                return \Carbon\Carbon::parse($value)->format('F j, Y');
+            } catch (\Exception $e) {
+                return '';
+            }
+        };
+
+        // Embed the signature as base64 so DomPDF can render it
+        $signatureData = null;
+        if ($app && !empty($app->signature_path)) {
+            $sigFile = storage_path('app/public/' . $app->signature_path);
+            if (file_exists($sigFile)) {
+                $sigExt = strtolower(pathinfo($sigFile, PATHINFO_EXTENSION));
+                $signatureData = 'data:image/' . $sigExt . ';base64,' . base64_encode(file_get_contents($sigFile));
+            }
+        }
     @endphp
 
     <!-- Form Code Header -->
@@ -261,7 +305,7 @@
 
     <!-- Date Line -->
     <div class="date-line">
-        DATE (PETSA) <span class="underline">{{ $claim->claim_filed_date ?? '' }}</span>
+        DATE (PETSA) <span class="underline">{{ $fmtDate($claim->claim_filed_date ?? null) }}</span>
     </div>
 
     <!-- Recipient -->
@@ -294,7 +338,7 @@
         <tr>
             <td class="num-col">2.</td>
             <td style="white-space: nowrap;">Address <span class="italic">(Tirahan)</span>:</td>
-            <td><span class="fill-line" style="width: 100%;">{{ $user->address ?? '' }}</span></td>
+            <td><span class="fill-line" style="width: 100%;">{{ $farmerProfile->address ?? '' }}</span></td>
         </tr>
         <tr>
             <td class="num-col">3.</td>
@@ -304,7 +348,7 @@
         <tr>
             <td class="num-col">4.</td>
             <td style="white-space: nowrap;">Location of Farm <span class="italic">(Lugar ng Saka)</span>:</td>
-            <td><span class="fill-line" style="width: 100%;">{{ $app->farm->location ?? '' }}</span></td>
+            <td><span class="fill-line" style="width: 100%;">{{ $app->farm_location ?? '' }}</span></td>
         </tr>
         <tr>
             <td class="num-col">5.</td>
@@ -318,19 +362,19 @@
             <td class="num-col">6.</td>
             <td colspan="2">
                 Area Insured <span class="italic">(Luwang/Sukat ng Bukid na Ipinaseguro)</span>: 
-                <span class="fill-line" style="width: 180px;">{{ $app->area_insured ?? '' }}</span> ha. <span class="italic">(ektarya)</span>
+                <span class="fill-line" style="width: 180px;">{{ isset($app->insured_area) ? number_format((float) $app->insured_area, 2) : '' }}</span> ha. <span class="italic">(ektarya)</span>
             </td>
         </tr>
         <tr>
             <td class="num-col">7.</td>
             <td style="white-space: nowrap;">Variety Planted <span class="italic">(Binhing Itinanim)</span>:</td>
-            <td><span class="fill-line" style="width: 100%;">{{ $app->variety_planted ?? '' }}</span></td>
+            <td><span class="fill-line" style="width: 100%;">{{ $app->variety ?? '' }}</span></td>
         </tr>
         <tr>
             <td class="num-col">8.</td>
             <td colspan="2">
-                <span class="italic">Petsa ng Pamumunla</span>: <span class="fill-line" style="width: 140px;">{{ $app->planting_date ?? '' }}</span>
-                &nbsp;&nbsp;&nbsp;&nbsp;<span class="bold">Aktuwal na Petsa ng Pagtatanim</span> <span class="fill-line" style="width: 140px;">{{ $app->actual_planting_date ?? '' }}</span>
+                <span class="italic">Petsa ng Pamumunla</span>: <span class="fill-line" style="width: 140px;">{{ $fmtDate($app->sowing_date ?? null) }}</span>
+                &nbsp;&nbsp;&nbsp;&nbsp;<span class="bold">Aktuwal na Petsa ng Pagtatanim</span> <span class="fill-line" style="width: 140px;">{{ $fmtDate($app->transplanting_date ?? null) }}</span>
             </td>
         </tr>
         <tr>
@@ -364,12 +408,12 @@
         <tr>
             <td class="num-col">1.</td>
             <td style="white-space: nowrap;">Cause of Loss <span class="italic">(Sanhi ng Pinsala)</span>:</td>
-            <td style="width: 100%;"><span class="fill-line" style="width: 100%;">{{ $claim->cause_of_loss ?? '' }}</span></td>
+            <td style="width: 100%;"><span class="fill-line" style="width: 100%;">{{ $report->damage_cause ?? '' }}</span></td>
         </tr>
         <tr>
             <td class="num-col">2.</td>
             <td style="white-space: nowrap;">Date of Loss Occurrence <span class="italic">(Petsa ng Pinsala)</span>:</td>
-            <td><span class="fill-line" style="width: 100%;">{{ $claim->date_of_loss ?? '' }}</span></td>
+            <td><span class="fill-line" style="width: 100%;">{{ $fmtDate($report->damage_date ?? null) }}</span></td>
         </tr>
         <tr>
             <td class="num-col">3.</td>
@@ -380,20 +424,20 @@
             <td class="num-col">4.</td>
             <td colspan="2">
                 Area Damaged <span class="italic">(Luwang o Sukat ng Napinsalang Bahagi)</span>: 
-                <span class="fill-line" style="width: 140px;">{{ $claim->area_damaged ?? '' }}</span> ha. <span class="italic">(ektarya)</span>
+                <span class="fill-line" style="width: 140px;">{{ isset($claim->area_damaged) ? number_format((float) $claim->area_damaged, 2) : '' }}</span> ha. <span class="italic">(ektarya)</span>
             </td>
         </tr>
         <tr>
             <td class="num-col">5.</td>
             <td colspan="2">
                 Extent/Degree of Damage <span class="italic">(Tindi o Porsyento ng Pinsala)</span>: 
-                <span class="fill-line" style="width: 110px;">{{ $claim->degree_of_damage ?? '' }}</span> % <span class="italic">(porsyento)</span>
+                <span class="fill-line" style="width: 110px;">{{ isset($claim->degree_of_damage) ? number_format((float) $claim->degree_of_damage, 2) : '' }}</span> % <span class="italic">(porsyento)</span>
             </td>
         </tr>
         <tr>
             <td class="num-col">6.</td>
             <td style="white-space: nowrap;">Expected Date of Harvest <span class="italic">(Tinatayang Petsa ng Pagpapagapas o Pag-ani)</span>:</td>
-            <td><span class="fill-line" style="width: 100%;">{{ $claim->expected_harvest_date ?? '' }}</span></td>
+            <td><span class="fill-line" style="width: 100%;">{{ $fmtDate($claim->expected_harvest_date ?? null) }}</span></td>
         </tr>
     </table>
 
@@ -407,35 +451,35 @@
     <table class="sketch-table">
         <tr>
             <td style="width: 20%;"></td>
-            <th>Lot 1 ___ ha.</th>
+            <th>Lot 1 {{ isset($claim->area_damaged) ? number_format((float) $claim->area_damaged, 2) : '___' }} ha.</th>
             <th>Lot 2 ___ ha.</th>
             <th>Lot 3 ___ ha.</th>
             <th>Lot 4 ___ ha.</th>
         </tr>
         <tr>
             <td>1. North <span class="italic">(Hilaga)</span></td>
-            <td><span class="sketch-line">&nbsp;</span></td>
+            <td><span class="sketch-line">{{ $app->north_boundary ?? '' }}&nbsp;</span></td>
             <td><span class="sketch-line">&nbsp;</span></td>
             <td><span class="sketch-line">&nbsp;</span></td>
             <td><span class="sketch-line">&nbsp;</span></td>
         </tr>
         <tr>
             <td>2. South <span class="italic">(Timog)</span></td>
-            <td><span class="sketch-line">&nbsp;</span></td>
+            <td><span class="sketch-line">{{ $app->south_boundary ?? '' }}&nbsp;</span></td>
             <td><span class="sketch-line">&nbsp;</span></td>
             <td><span class="sketch-line">&nbsp;</span></td>
             <td><span class="sketch-line">&nbsp;</span></td>
         </tr>
         <tr>
             <td>3. East <span class="italic">(Silangan)</span></td>
-            <td><span class="sketch-line">&nbsp;</span></td>
+            <td><span class="sketch-line">{{ $app->east_boundary ?? '' }}&nbsp;</span></td>
             <td><span class="sketch-line">&nbsp;</span></td>
             <td><span class="sketch-line">&nbsp;</span></td>
             <td><span class="sketch-line">&nbsp;</span></td>
         </tr>
         <tr>
             <td>4. West <span class="italic">(Kanluran)</span></td>
-            <td><span class="sketch-line">&nbsp;</span></td>
+            <td><span class="sketch-line">{{ $app->west_boundary ?? '' }}&nbsp;</span></td>
             <td><span class="sketch-line">&nbsp;</span></td>
             <td><span class="sketch-line">&nbsp;</span></td>
             <td><span class="sketch-line">&nbsp;</span></td>
@@ -496,8 +540,13 @@
     <!-- Signature Block -->
     <div class="signature-block">
         <div class="signature-container">
-            <p style="margin-bottom: 25px; text-align: left;" class="bold">Very truly yours,</p>
-            <div class="signature-line">&nbsp;</div>
+            <p style="margin-bottom: 4px; text-align: left;" class="bold">Very truly yours,</p>
+            <div class="signature-space">
+                @if ($signatureData)
+                    <img src="{{ $signatureData }}" alt="Signature">
+                @endif
+            </div>
+            <div class="signature-line">{{ $farmerName ?? '' }}&nbsp;</div>
             <div class="signature-caption">
                 Signature over Printed Name of Assured Farmer-Claimant<br>
                 <span class="italic">(Lagda sa ibabaw ng Pangalan ng Magsasakang Nakaseguro)</span>
@@ -516,7 +565,7 @@
         &nbsp;&nbsp;&nbsp;&nbsp;<span class="bold">CP number:</span> <span class="fill-line" style="width: 190px;">{{ $user->phone_number ?? '' }}</span>
     </div>
     <div class="fp-row">
-        <span class="bold">Address:</span> <span class="fill-line" style="width: 560px;">{{ $user->address ?? '' }}</span>
+        <span class="bold">Address:</span> <span class="fill-line" style="width: 560px;">{{ $farmerProfile->address ?? '' }}</span>
     </div>
     <div class="fp-row bold" style="margin-bottom: 2px;">
         Household members:
