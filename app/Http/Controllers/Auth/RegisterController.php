@@ -10,6 +10,26 @@ use Illuminate\Support\Facades\Hash;
 
 class RegisterController extends Controller
 {
+    /**
+     * Trim and convert a name value to uppercase.
+     * Uses mb_strtoupper so letters like Ñ are handled correctly.
+     * Returns null for empty values so nullable fields stay null.
+     */
+    private function formatName(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        return mb_strtoupper($value, 'UTF-8');
+    }
+
     public function register(Request $request)
     {
         $request->validate(
@@ -66,10 +86,10 @@ class RegisterController extends Controller
             : null;
 
         $user = User::create([
-            'last_name' => $request->last_name,
-            'first_name' => $request->first_name,
-            'middle_name' => $request->middle_name,
-            'extension_name' => $request->extension_name,
+            'last_name' => $this->formatName($request->last_name),
+            'first_name' => $this->formatName($request->first_name),
+            'middle_name' => $this->formatName($request->middle_name),
+            'extension_name' => $this->formatName($request->extension_name),
             'sex' => $request->sex,
             'email' => $email,
             'phone_number' => $phone,
