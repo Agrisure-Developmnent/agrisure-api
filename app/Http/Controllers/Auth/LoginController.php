@@ -111,7 +111,7 @@ class LoginController extends Controller
             ->where('is_used', false)
             ->update(['is_used' => true]);
 
-        if (app()->environment('testing')) {
+        if (app()->environment('production')) {
             $otpCode = '111111';
         } else {
             $otpCode = (string) random_int(100000, 999999);
