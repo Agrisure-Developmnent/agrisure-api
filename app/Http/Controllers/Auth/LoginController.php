@@ -111,7 +111,11 @@ class LoginController extends Controller
             ->where('is_used', false)
             ->update(['is_used' => true]);
 
-        $otpCode = (string) random_int(100000, 999999);
+        if (app()->environment('testing')) {
+            $otpCode = '111111';
+        } else {
+            $otpCode = (string) random_int(100000, 999999);
+        }
 
         if (filter_var($loginInput, FILTER_VALIDATE_EMAIL)) {
 
