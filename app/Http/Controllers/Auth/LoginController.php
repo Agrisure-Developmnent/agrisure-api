@@ -111,11 +111,7 @@ class LoginController extends Controller
             ->where('is_used', false)
             ->update(['is_used' => true]);
 
-        if (app()->environment('production')) {
-            $otpCode = '111111';
-        } else {
-            $otpCode = (string) random_int(100000, 999999);
-        }
+        $otpCode = $this->bypassOtpFor($user) ?? (string) random_int(100000, 999999);
 
         if (filter_var($loginInput, FILTER_VALIDATE_EMAIL)) {
 
@@ -177,6 +173,27 @@ class LoginController extends Controller
             'user_id' => $user->id,
             'role' => $user->role,
         ]);
+    }
+
+    /**
+     * Returns the fixed test OTP when this user is one of the configured
+     * test accounts (see config/services.php "otp_bypass"), otherwise null.
+     */
+    private function bypassOtpFor(User $user): ?string
+    {
+        $code = (string) config('services.otp_bypass.code');
+        $accounts = config('services.otp_bypass.accounts', []);
+
+        if (!preg_match('/^\d{6}$/', $code) || empty($accounts)) {
+            return null;
+        }
+
+        $identifiers = array_filter([
+            $user->email ? strtolower($user->email) : null,
+            $user->phone_number,
+        ]);
+
+        return array_intersect($identifiers, $accounts) ? $code : null;
     }
 
     public function forgotPassword(Request $request, SmsService $smsService)

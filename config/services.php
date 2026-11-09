@@ -39,4 +39,18 @@ return [
         'sender_name' => env('SEMAPHORE_SENDER_NAME', 'AgriSure'),
     ],
 
+    /*
+    | Fixed OTP for load/automation testing (e.g. JMeter). Only the accounts
+    | listed in OTP_BYPASS_ACCOUNTS (comma-separated emails or phone numbers)
+    | get OTP_BYPASS_CODE; everyone else always gets a random OTP.
+    | Leave OTP_BYPASS_CODE empty to turn the bypass off completely.
+    */
+    'otp_bypass' => [
+        'code' => env('OTP_BYPASS_CODE'),
+        'accounts' => array_values(array_filter(array_map(
+            fn ($v) => strtolower(trim($v)),
+            explode(',', (string) env('OTP_BYPASS_ACCOUNTS', ''))
+        ))),
+    ],
+
 ];
