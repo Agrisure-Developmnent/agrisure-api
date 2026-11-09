@@ -115,6 +115,28 @@ class OtpBypassTest extends TestCase
         $this->assertMatchesRegularExpression('/^\d{6}$/', $this->latestOtp($user));
     }
 
+    public function test_status_command_reports_listed_account(): void
+    {
+        $user = User::factory()->mao()->create(['email' => 'jmeter@example.com']);
+        $this->enableBypass(['jmeter@example.com']);
+
+        $this->artisan('otp:bypass-status', ['login' => 'jmeter@example.com'])
+            ->expectsOutputToContain('Bypass active:   YES')
+            ->expectsOutputToContain("User #{$user->id} (mao): WILL get the fixed OTP")
+            ->assertExitCode(0);
+    }
+
+    public function test_status_command_reports_inactive_bypass(): void
+    {
+        User::factory()->create(['email' => 'farmer@example.com']);
+        $this->enableBypass([], code: null);
+
+        $this->artisan('otp:bypass-status', ['login' => 'farmer@example.com'])
+            ->expectsOutputToContain('Bypass active:   NO')
+            ->expectsOutputToContain('will get a RANDOM OTP')
+            ->assertExitCode(0);
+    }
+
     public function test_production_no_longer_gives_everyone_fixed_otp(): void
     {
         $this->app['env'] = 'production';
